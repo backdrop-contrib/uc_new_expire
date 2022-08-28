@@ -1,0 +1,116 @@
+<?php
+/**
+ * @file
+ * Main file for the New Expiration module.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function uc_new_expire_menu() {
+
+  $items['admin/store/settings/new-expire'] = array(
+    'title' => 'New expiration',
+    'description' => 'Configure catalog term expiration behavior.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('uc_new_expire_settings_form'),
+    'file' => 'uc_new_expire.admin.inc',
+    'access arguments' => array('administer catalog'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_config_info().
+ */
+function uc_new_expire_config_info() {
+  $prefixes['uc_new_expire.settings'] = array(
+    'label' => t('New Expiration settings'),
+    'group' => t('Configuration'),
+  );
+  return $prefixes;
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Remove "New Product" taxonomy term from any product older than specified days.
+ */
+function uc_new_expire_cron() {
+  $config = config('uc_new_expire.settings');
+  $days = $config->get('uc_new_expire_days');
+  $cutoff_time = REQUEST_TIME - $days * 86400;
+  $tid = $config->get('uc_new_expire_tid');
+  if ($tid && $days) {
+    $result = db_query('
+      SELECT n.nid, n.title
+      FROM {node} AS n
+      INNER JOIN {field_data_taxonomy_catalog} AS tc ON n.nid = tc.entity_id
+      WHERE n.created < :cutoff_time
+      AND tc.taxonomy_catalog_tid = :tid
+      ', array(':cutoff_time' => $cutoff_time, ':tid' => $tid));
+    foreach ($result as $row) {
+      $node = node_load($row->nid);
+
+      // The commented-out code below is the way we'd like to remove taxonomy
+      // terms, but there's a problem with uc_price_per_role and product kits;
+      // when you alter a product that's part of a product kit, the product kit
+      // reprices the kit and it does it wrongly if there's role pricing in
+      // place. So insteady of doing a node_save, we'll just remove the entry
+      // directly from the db.
+
+//       foreach ($node->taxonomy_catalog['und'] as $key => $elem) {
+//         if ($elem['tid'] == $tid) {
+//           unset($node->taxonomy_catalog['und'][$key]);
+//         }
+//       }
+//       node_save($node);
+
+      db_delete('field_data_taxonomy_catalog')
+        ->condition('entity_id', $node->nid)
+        ->condition('taxonomy_catalog_tid', $tid)
+        ->execute();
+      db_delete('field_revision_taxonomy_catalog')
+        ->condition('entity_id', $node->nid)
+        ->condition('taxonomy_catalog_tid', $tid)
+        ->execute();
+      db_delete('taxonomy_index')
+        ->condition('nid', $node->nid)
+        ->condition('tid', $tid)
+        ->execute();
+
+      $term = taxonomy_term_load($tid);
+      watchdog('uc_new_expire', 'Removed "%term" from "%title"',
+        array('%term' => $term->name, '%title' => $node->title));
+    }
+  }
+}
+
+/**
+ * Implements hook_uc_store_status().
+ */
+function uc_new_expire_uc_store_status() {
+  $config = config('uc_new_expire.settings');
+  $message = array();
+  $tid = $config->get('uc_new_expire_tid');
+  $days = $config->get('uc_new_expire_days');
+  if ($tid) {
+    $term = taxonomy_term_load($tid);
+    $message[] = array(
+      'status' => 'ok',
+      'title' => t('New expiration'),
+      'desc' => t('The catalog term %name will expire after @days days.',
+        array('%name' => $term->name, '@days' => $days)),
+    );
+  }
+  else {
+    $message[] = array(
+      'status' => 'warning',
+      'title' => t('New expiration'),
+      'desc' => t('The New Expiration module is enabled but you have not selected an expiring catalog term.') . ' ' .  l(t('Select the expiring catalog term.'), 'admin/store/settings/new-expire'),
+    );
+  }
+  return $message;
+}

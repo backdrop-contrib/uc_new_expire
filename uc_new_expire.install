@@ -1,0 +1,19 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the uc_new_expire module.
+ *
+ */
+
+/**
+ * Convert uc_new_expire variables to config.
+ */
+function uc_new_expire_update_1000() {
+  $config = config('uc_new_expire.settings');
+  $config->set('uc_new_expire_tid', update_variable_get('uc_new_expire_tid', ''));
+  $config->set('uc_new_expire_days', update_variable_get('uc_new_expire_days', '30'));
+  $config->save();
+
+  update_variable_del('uc_new_expire_tid');
+  update_variable_del('uc_new_expire_days');
+}

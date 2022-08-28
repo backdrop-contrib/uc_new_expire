@@ -1,0 +1,8 @@
+name = Ubercart New Expiration
+description = Sets an expiration time for an Ubercart catalog taxonomy term.
+dependencies[] = uc_catalog
+package = Ubercart - extra
+backdrop = 1.x
+type = module
+
+configure = admin/store/settings/new-expire
